@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Juken Telemetry</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#060810;--bg2:#0d1120;--bg3:#111827;
+  --cyan:#00c8ff;--cyd:rgba(0,200,255,.15);
+  --red:#ff3c3c;--orange:#ff8800;--green:#00ff88;
+  --pink:#ff4488;--yellow:#ffcc00;--teal:#00ffcc;
+  --gray:rgba(255,255,255,.25);--dgray:rgba(255,255,255,.08);
+  --border:rgba(0,200,255,.12);
+}
+body{background:var(--bg);color:#e0e8ff;font-family:'Share Tech Mono',monospace;min-height:100vh}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(0,200,255,.018) 40px);pointer-events:none;z-index:0}
+
+/* ===== TOPBAR ===== */
+.topbar{position:sticky;top:0;z-index:100;background:rgba(6,8,16,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:10px 16px;gap:12px}
+.logo{font-family:'Orbitron',monospace;font-size:13px;font-weight:700;color:var(--cyan);letter-spacing:4px;white-space:nowrap}
+.topright{display:flex;align-items:center;gap:14px}
+.ws-dot{width:8px;height:8px;border-radius:50%;background:#333;transition:background .3s;flex-shrink:0}
+.ws-dot.on{background:var(--green);box-shadow:0 0 6px var(--green);animation:blink 1.5s ease-in-out infinite}
+.session-badge{font-size:9px;color:rgba(0,200,255,.5);letter-spacing:2px}
+.session-id{font-family:'Orbitron',monospace;font-size:11px;color:var(--cyan)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ===== TABS ===== */
+.tabs{display:flex;border-bottom:1px solid var(--border);padding:0 16px;background:var(--bg2);position:sticky;top:41px;z-index:99}
+.tab{padding:10px 18px;font-size:10px;letter-spacing:2px;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;text-transform:uppercase}
+.tab.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+.tab:hover{color:#e0e8ff}
+
+/* ===== PAGE ===== */
+.page{display:none;padding:16px;position:relative;z-index:1}
+.page.active{display:block}
+
+/* ===== LIVE DASHBOARD ===== */
+.live-top{display:grid;grid-template-columns:200px 1fr;gap:12px;margin-bottom:12px}
+
+/* RPM gauge */
+.gauge-wrap{position:relative;width:200px;height:200px}
+.gauge-wrap svg{width:100%;height:100%}
+.gauge-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
+.gauge-num{font-family:'Orbitron',monospace;font-size:28px;font-weight:900;color:var(--red);line-height:1}
+.gauge-unit{font-size:9px;color:rgba(255,60,60,.5);letter-spacing:2px;margin-top:3px}
+.gauge-sub{font-family:'Orbitron',monospace;font-size:7px;color:rgba(255,255,255,.2);letter-spacing:3px;margin-top:4px}
+
+/* Metric cards kanan */
+.mcards{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px}
+.mcard{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px 12px;position:relative}
+.mcard::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;border-radius:6px 0 0 6px;background:var(--a,var(--cyan))}
+.mcard-label{font-size:8px;color:var(--gray);letter-spacing:2px;margin-bottom:4px;text-transform:uppercase}
+.mcard-val{font-family:'Orbitron',monospace;font-size:20px;font-weight:700;color:var(--a,var(--cyan));line-height:1}
+.mcard-unit{font-size:9px;color:rgba(255,255,255,.22);margin-left:2px}
+.mcard-bar{height:3px;background:var(--dgray);border-radius:2px;margin-top:8px;overflow:hidden}
+.mcard-bar-fill{height:100%;border-radius:2px;background:var(--a,var(--cyan));transition:width .25s ease}
+
+/* TPS + bottom row */
+.tps-wrap{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px;position:relative}
+.tps-wrap::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;border-radius:6px 0 0 6px;background:var(--orange)}
+.tps-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
+.tps-label{font-size:8px;color:var(--gray);letter-spacing:2px}
+.tps-num{font-family:'Orbitron',monospace;font-size:14px;font-weight:700;color:var(--orange)}
+.btrack{height:6px;background:var(--dgray);border-radius:3px;overflow:hidden}
+.bfill{height:100%;border-radius:3px;transition:width .25s ease}
+.tps-fill{background:linear-gradient(90deg,var(--orange),var(--yellow))}
+.ticks{display:flex;justify-content:space-between;margin-top:3px}
+.tick{font-size:7px;color:rgba(255,255,255,.15)}
+
+.brow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
+.scard{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px;text-align:center}
+.slbl{font-size:7px;color:var(--gray);letter-spacing:2px;margin-bottom:4px}
+.sval{font-family:'Orbitron',monospace;font-size:13px;font-weight:700}
+.fp-on{color:var(--green)}.fp-off{color:var(--red)}
+
+/* Chart */
+.chart-section{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:8px}
+.chart-title{font-size:9px;color:var(--gray);letter-spacing:2px;margin-bottom:10px;text-transform:uppercase}
+.chart-wrap{position:relative;height:160px}
+
+/* ===== SESSIONS ===== */
+.session-list{display:flex;flex-direction:column;gap:8px}
+.session-item{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;transition:border-color .2s}
+.session-item:hover{border-color:rgba(0,200,255,.35)}
+.session-item.active-sess{border-color:var(--cyan)}
+.sess-info{}
+.sess-id{font-family:'Orbitron',monospace;font-size:11px;color:var(--cyan);margin-bottom:3px}
+.sess-time{font-size:9px;color:var(--gray)}
+.sess-pts{font-size:9px;color:rgba(0,200,255,.5);margin-top:2px}
+.sess-actions{display:flex;gap:8px;flex-shrink:0}
+.btn{font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:1px;padding:6px 12px;border-radius:4px;cursor:pointer;border:1px solid;transition:all .2s;text-transform:uppercase}
+.btn-csv{color:var(--green);border-color:rgba(0,255,136,.3);background:rgba(0,255,136,.05)}
+.btn-csv:hover{background:rgba(0,255,136,.12)}
+.btn-replay{color:var(--cyan);border-color:rgba(0,200,255,.3);background:rgba(0,200,255,.05)}
+.btn-replay:hover{background:rgba(0,200,255,.12)}
+.empty-state{text-align:center;color:var(--gray);font-size:11px;padding:40px;letter-spacing:2px}
+
+/* ===== REPLAY ===== */
+.replay-header{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.replay-title{font-family:'Orbitron',monospace;font-size:11px;color:var(--cyan)}
+.replay-controls{display:flex;align-items:center;gap:8px;margin-left:auto}
+.btn-ctrl{font-family:'Share Tech Mono',monospace;font-size:9px;padding:5px 12px;border-radius:4px;cursor:pointer;border:1px solid rgba(0,200,255,.25);color:var(--cyan);background:rgba(0,200,255,.05)}
+.btn-ctrl:hover{background:rgba(0,200,255,.12)}
+.replay-progress{width:100%;margin-bottom:14px}
+.replay-progress input[type=range]{width:100%;accent-color:var(--cyan)}
+.replay-time{font-size:9px;color:var(--gray);text-align:right;margin-top:3px}
+.replay-speed{font-size:9px;color:var(--gray)}
+
+/* ===== STATUS BAR ===== */
+.statusbar{font-size:8px;color:rgba(0,200,255,.25);text-align:center;padding:10px;letter-spacing:1px;border-top:1px solid var(--border);margin-top:8px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="logo">JUKEN TELEMETRY</span>
+  <div class="topright">
+    <span class="session-badge">SESSION</span>
+    <span class="session-id" id="hdrSess">—</span>
+    <div class="ws-dot" id="wsDot"></div>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('live')">&#9654; Live</div>
+  <div class="tab" onclick="switchTab('sessions')">&#9776; Sessions</div>
+  <div class="tab" onclick="switchTab('replay')">&#9664;&#9654; Replay</div>
+</div>
+
+<!-- ===== LIVE ===== -->
+<div class="page active" id="page-live">
+  <div class="live-top">
+    <!-- RPM Gauge -->
+    <div class="gauge-wrap">
+      <svg viewBox="0 0 190 190" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="95" cy="95" r="80" fill="none"
+          stroke="rgba(255,60,60,.1)" stroke-width="11"
+          stroke-dasharray="377 119" stroke-dashoffset="94"
+          transform="rotate(135 95 95)"/>
+        <circle id="rpmArc" cx="95" cy="95" r="80" fill="none"
+          stroke="#ff3c3c" stroke-width="11" stroke-linecap="round"
+          stroke-dasharray="0 503" stroke-dashoffset="94"
+          transform="rotate(135 95 95)"
+          style="transition:stroke-dasharray .25s ease,stroke .2s"/>
+        <g id="rpmTicks" stroke="rgba(255,255,255,.18)" stroke-width="1.5"></g>
+        <circle cx="95" cy="95" r="65" fill="rgba(0,0,0,.85)"/>
+        <text x="95" y="177" fill="rgba(255,255,255,.12)"
+          font-family="Share Tech Mono" font-size="8" text-anchor="middle">0  2  4  6  8K</text>
+      </svg>
+      <div class="gauge-center">
+        <div class="gauge-num" id="lRpm">0</div>
+        <div class="gauge-unit">RPM</div>
+        <div class="gauge-sub">ENGINE</div>
+      </div>
+    </div>
+    <!-- Metric cards -->
+    <div class="mcards">
+      <div class="mcard" style="--a:#00c8ff">
+        <div class="mcard-label">VOLTAGE</div>
+        <div class="mcard-val" id="lVolt">0.0<span class="mcard-unit">V</span></div>
+        <div class="mcard-bar"><div class="mcard-bar-fill" id="lVoltBar" style="width:0%"></div></div>
+      </div>
+      <div class="mcard" style="--a:#ff4488">
+        <div class="mcard-label">COOLANT ECT</div>
+        <div class="mcard-val" id="lEct">0.0<span class="mcard-unit">°C</span></div>
+        <div class="mcard-bar"><div class="mcard-bar-fill" id="lEctBar" style="width:0%;background:#ff4488"></div></div>
+      </div>
+      <div class="mcard" style="--a:#aaff66">
+        <div class="mcard-label">O2 SENSOR</div>
+        <div class="mcard-val" id="lO2">0.00<span class="mcard-unit">λ</span></div>
+        <div class="mcard-bar"><div class="mcard-bar-fill" id="lO2Bar" style="width:0%;background:#aaff66"></div></div>
+      </div>
+      <div class="mcard" style="--a:#ffcc00">
+        <div class="mcard-label">MAP kPa</div>
+        <div class="mcard-val" id="lMap">0.0<span class="mcard-unit">kPa</span></div>
+        <div class="mcard-bar"><div class="mcard-bar-fill" id="lMapBar" style="width:0%;background:#ffcc00"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tps-wrap">
+    <div class="tps-row">
+      <span class="tps-label">THROTTLE POSITION / TPS</span>
+      <span class="tps-num" id="lTps">0.0 <span style="font-size:8px;opacity:.4">%</span></span>
+    </div>
+    <div class="btrack"><div class="bfill tps-fill" id="lTpsBar" style="width:0%"></div></div>
+    <div class="ticks"><span class="tick">0</span><span class="tick">25</span><span class="tick">50</span><span class="tick">75</span><span class="tick">100</span></div>
+  </div>
+
+  <div class="brow">
+    <div class="scard"><div class="slbl">SESSION</div><div class="sval" style="color:#00c8ff;font-size:11px" id="lSessTimer">--:--:--</div></div>
+    <div class="scard"><div class="slbl">DATA POINTS</div><div class="sval" style="color:#00c8ff" id="lPoints">0</div></div>
+    <div class="scard"><div class="slbl">FUEL PUMP</div><div class="sval fp-off" id="lFp">OFF</div></div>
+  </div>
+
+  <!-- Charts -->
+  <div class="chart-section">
+    <div class="chart-title">RPM — real-time (60 detik terakhir)</div>
+    <div class="chart-wrap"><canvas id="chartRpm"></canvas></div>
+  </div>
+  <div class="chart-section">
+    <div class="chart-title">TPS / ECT / O2</div>
+    <div class="chart-wrap"><canvas id="chartMulti"></canvas></div>
+  </div>
+
+  <div class="statusbar" id="lStatus">CONNECTING TO SERVER...</div>
+</div>
+
+<!-- ===== SESSIONS ===== -->
+<div class="page" id="page-sessions">
+  <div id="sessionList"><div class="empty-state">LOADING SESSIONS...</div></div>
+</div>
+
+<!-- ===== REPLAY ===== -->
+<div class="page" id="page-replay">
+  <div id="replayEmpty" class="empty-state">Pilih sesi dari tab Sessions lalu klik Replay</div>
+  <div id="replayContent" style="display:none">
+    <div class="replay-header">
+      <span class="replay-title" id="replayTitle">SESSION #—</span>
+      <div class="replay-controls">
+        <span class="replay-speed" id="replaySpeedLabel">1×</span>
+        <button class="btn-ctrl" onclick="setSpeed(1)">1×</button>
+        <button class="btn-ctrl" onclick="setSpeed(5)">5×</button>
+        <button class="btn-ctrl" onclick="setSpeed(20)">20×</button>
+        <button class="btn-ctrl" id="btnPlayPause" onclick="togglePlay()">&#9654; Play</button>
+      </div>
+    </div>
+    <div class="replay-progress">
+      <input type="range" id="replaySlider" min="0" value="0" oninput="seekReplay(this.value)">
+      <div class="replay-time" id="replayTimeLabel">0 / 0 detik</div>
+    </div>
+
+    <!-- Gauge replay -->
+    <div class="live-top" style="margin-bottom:12px">
+      <div class="gauge-wrap">
+        <svg viewBox="0 0 190 190" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="95" cy="95" r="80" fill="none"
+            stroke="rgba(255,60,60,.1)" stroke-width="11"
+            stroke-dasharray="377 119" stroke-dashoffset="94"
+            transform="rotate(135 95 95)"/>
+          <circle id="rpyArc" cx="95" cy="95" r="80" fill="none"
+            stroke="#ff3c3c" stroke-width="11" stroke-linecap="round"
+            stroke-dasharray="0 503" stroke-dashoffset="94"
+            transform="rotate(135 95 95)"
+            style="transition:stroke-dasharray .15s ease,stroke .15s"/>
+          <g id="rpyTicks" stroke="rgba(255,255,255,.18)" stroke-width="1.5"></g>
+          <circle cx="95" cy="95" r="65" fill="rgba(0,0,0,.85)"/>
+          <text x="95" y="177" fill="rgba(255,255,255,.12)"
+            font-family="Share Tech Mono" font-size="8" text-anchor="middle">0  2  4  6  8K</text>
+        </svg>
+        <div class="gauge-center">
+          <div class="gauge-num" id="rpyRpm">0</div>
+          <div class="gauge-unit">RPM</div>
+          <div class="gauge-sub">REPLAY</div>
+        </div>
+      </div>
+      <div class="mcards">
+        <div class="mcard" style="--a:#00c8ff">
+          <div class="mcard-label">VOLTAGE</div>
+          <div class="mcard-val" id="rpyVolt">0.0<span class="mcard-unit">V</span></div>
+          <div class="mcard-bar"><div class="mcard-bar-fill" id="rpyVoltBar" style="width:0%"></div></div>
+        </div>
+        <div class="mcard" style="--a:#ff4488">
+          <div class="mcard-label">COOLANT ECT</div>
+          <div class="mcard-val" id="rpyEct">0.0<span class="mcard-unit">°C</span></div>
+          <div class="mcard-bar"><div class="mcard-bar-fill" id="rpyEctBar" style="width:0%;background:#ff4488"></div></div>
+        </div>
+        <div class="mcard" style="--a:#aaff66">
+          <div class="mcard-label">O2 SENSOR</div>
+          <div class="mcard-val" id="rpyO2">0.00<span class="mcard-unit">λ</span></div>
+          <div class="mcard-bar"><div class="mcard-bar-fill" id="rpyO2Bar" style="width:0%;background:#aaff66"></div></div>
+        </div>
+        <div class="mcard" style="--a:#ffcc00">
+          <div class="mcard-label">MAP kPa</div>
+          <div class="mcard-val" id="rpyMap">0.0<span class="mcard-unit">kPa</span></div>
+          <div class="mcard-bar"><div class="mcard-bar-fill" id="rpyMapBar" style="width:0%;background:#ffcc00"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tps-wrap">
+      <div class="tps-row">
+        <span class="tps-label">THROTTLE / TPS</span>
+        <span class="tps-num" id="rpyTps">0.0 <span style="font-size:8px;opacity:.4">%</span></span>
+      </div>
+      <div class="btrack"><div class="bfill tps-fill" id="rpyTpsBar" style="width:0%"></div></div>
+      <div class="ticks"><span class="tick">0</span><span class="tick">25</span><span class="tick">50</span><span class="tick">75</span><span class="tick">100</span></div>
+    </div>
+
+    <div class="chart-section">
+      <div class="chart-title">RPM — sesi penuh</div>
+      <div class="chart-wrap"><canvas id="rpyChartRpm"></canvas></div>
+    </div>
+    <div class="chart-section">
+      <div class="chart-title">TPS / ECT / O2</div>
+      <div class="chart-wrap"><canvas id="rpyChartMulti"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== CONFIG =====
+const SERVER = window.location.origin;
+
+// ===== TABS =====
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['live','sessions','replay'][i]===name));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id==='page-'+name));
+  if (name==='sessions') loadSessions();
+}
+
+// ===== TICK MARKS GAUGE =====
+function buildTicks(svgGroupId) {
+  const g = document.getElementById(svgGroupId);
+  for (let i=0; i<=8; i++) {
+    const deg=-135+(270/8)*i, rad=deg*Math.PI/180;
+    const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+    const cx=95,cy=95,r1=87,r2=73;
+    l.setAttribute('x1',(cx+r1*Math.sin(rad)).toFixed(1));
+    l.setAttribute('y1',(cy-r1*Math.cos(rad)).toFixed(1));
+    l.setAttribute('x2',(cx+r2*Math.sin(rad)).toFixed(1));
+    l.setAttribute('y2',(cy-r2*Math.cos(rad)).toFixed(1));
+    g.appendChild(l);
+  }
+}
+buildTicks('rpmTicks');
+buildTicks('rpyTicks');
+
+// ===== GAUGE UPDATE =====
+function setGauge(arcId, numId, rpm) {
+  const el=document.getElementById(numId);
+  el.textContent=rpm.toLocaleString();
+  el.style.color=rpm>6000?'#ff0000':rpm>4000?'#ff8800':'#ff3c3c';
+  const arc=((Math.min(rpm/8000,1))*377).toFixed(1);
+  const a=document.getElementById(arcId);
+  a.setAttribute('stroke-dasharray',arc+' '+(503-arc));
+  a.setAttribute('stroke',rpm>6000?'#ff0000':rpm>4000?'#ff8800':'#ff3c3c');
+}
+
+// ===== CHARTS — LIVE =====
+const chartCfg = (label, color, yMax) => ({
+  type:'line',
+  data:{ labels:[], datasets:[{ label, data:[], borderColor:color, borderWidth:1.5,
+    pointRadius:0, tension:0.3, fill:true,
+    backgroundColor: color.replace(')',', 0.08)').replace('rgb','rgba') }] },
+  options:{ responsive:true, maintainAspectRatio:false, animation:false,
+    scales:{ x:{ display:false }, y:{ max:yMax, grid:{ color:'rgba(255,255,255,.05)' },
+      ticks:{ color:'rgba(255,255,255,.3)', font:{ size:9 } } } },
+    plugins:{ legend:{ display:false } } }
+});
+
+const chartRpm   = new Chart(document.getElementById('chartRpm'), chartCfg('RPM','rgb(255,60,60)',8000));
+const chartMulti = new Chart(document.getElementById('chartMulti'), {
+  type:'line',
+  data:{ labels:[], datasets:[
+    { label:'TPS %',  data:[], borderColor:'#ff8800', borderWidth:1.5, pointRadius:0, tension:0.3, yAxisID:'y' },
+    { label:'ECT °C', data:[], borderColor:'#ff4488', borderWidth:1.5, pointRadius:0, tension:0.3, yAxisID:'y2' },
+    { label:'O2 λ',   data:[], borderColor:'#aaff66', borderWidth:1.5, pointRadius:0, tension:0.3, yAxisID:'y3' },
+  ]},
+  options:{ responsive:true, maintainAspectRatio:false, animation:false,
+    scales:{
+      x:{ display:false },
+      y:{  position:'left',  max:100, grid:{ color:'rgba(255,255,255,.05)' }, ticks:{ color:'#ff8800', font:{size:8} } },
+      y2:{ position:'right', max:120, grid:{ drawOnChartArea:false }, ticks:{ color:'#ff4488', font:{size:8} } },
+      y3:{ position:'right', max:1.5, grid:{ drawOnChartArea:false }, ticks:{ color:'#aaff66', font:{size:8} } },
+    },
+    plugins:{ legend:{ labels:{ color:'rgba(255,255,255,.4)', font:{size:9}, boxWidth:12 } } }
+  }
+});
+
+const MAX_LIVE_PTS = 200;
+function pushLiveChart(d) {
+  const ts = new Date(d.ts||Date.now()).toLocaleTimeString();
+  [chartRpm, chartMulti].forEach(c => {
+    c.data.labels.push(ts);
+    if (c.data.labels.length > MAX_LIVE_PTS) c.data.labels.shift();
+  });
+  chartRpm.data.datasets[0].data.push(d.rpm);
+  if (chartRpm.data.datasets[0].data.length > MAX_LIVE_PTS) chartRpm.data.datasets[0].data.shift();
+
+  chartMulti.data.datasets[0].data.push(d.tps);
+  chartMulti.data.datasets[1].data.push(d.ect);
+  chartMulti.data.datasets[2].data.push(d.o2);
+  chartMulti.data.datasets.forEach(ds => { if (ds.data.length > MAX_LIVE_PTS) ds.data.shift(); });
+
+  chartRpm.update('none');
+  chartMulti.update('none');
+}
+
+// ===== LIVE STATE =====
+let livePoints = 0;
+let sessStartTs = null;
+let sessTimerInterval = null;
+
+function startSessTimer(fromMs) {
+  sessStartTs = Date.now() - (fromMs||0);
+  if (sessTimerInterval) clearInterval(sessTimerInterval);
+  sessTimerInterval = setInterval(() => {
+    const e = Math.floor((Date.now()-sessStartTs)/1000);
+    document.getElementById('lSessTimer').textContent =
+      String(Math.floor(e/3600)).padStart(2,'0')+':'+
+      String(Math.floor((e%3600)/60)).padStart(2,'0')+':'+
+      String(e%60).padStart(2,'0');
+  }, 1000);
+}
+
+function updateLive(d) {
+  setGauge('rpmArc','lRpm', d.rpm||0);
+  document.getElementById('lTps').innerHTML = (d.tps||0).toFixed(1)+' <span style="font-size:8px;opacity:.4">%</span>';
+  document.getElementById('lTpsBar').style.width = Math.min(d.tps||0,100)+'%';
+  document.getElementById('lVolt').innerHTML = (d.voltage||0).toFixed(1)+'<span class="mcard-unit">V</span>';
+  document.getElementById('lVoltBar').style.width = Math.min(((d.voltage||0)/16)*100,100)+'%';
+  document.getElementById('lEct').innerHTML = (d.ect||0).toFixed(1)+'<span class="mcard-unit">°C</span>';
+  document.getElementById('lEctBar').style.width = Math.min(((d.ect||0)/120)*100,100)+'%';
+  document.getElementById('lO2').innerHTML = (d.o2||0).toFixed(2)+'<span class="mcard-unit">λ</span>';
+  document.getElementById('lO2Bar').style.width = Math.min(((d.o2||0)/1.5)*100,100)+'%';
+  document.getElementById('lMap').innerHTML = (d.map||0).toFixed(1)+'<span class="mcard-unit">kPa</span>';
+  document.getElementById('lMapBar').style.width = Math.min(((d.map||0)/150)*100,100)+'%';
+  const fp=document.getElementById('lFp');
+  fp.textContent=d.fp?'ON':'OFF'; fp.className='sval '+(d.fp?'fp-on':'fp-off');
+  livePoints++;
+  document.getElementById('lPoints').textContent = livePoints.toLocaleString();
+  pushLiveChart(d);
+}
+
+// ===== WEBSOCKET =====
+let ws, wsRecon;
+function connectWs() {
+  const wsUrl = SERVER.replace(/^http/, 'ws');
+  ws = new WebSocket(wsUrl);
+  ws.onopen = () => {
+    document.getElementById('wsDot').classList.add('on');
+    document.getElementById('lStatus').textContent = 'CONNECTED · '+wsUrl;
+    clearTimeout(wsRecon);
+  };
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'data') {
+      updateLive(msg);
+      document.getElementById('hdrSess').textContent = '#'+msg.sessionId;
+    } else if (msg.type === 'session_start') {
+      livePoints = 0;
+      startSessTimer(0);
+      document.getElementById('hdrSess').textContent = '#'+msg.sessionId;
+    } else if (msg.type === 'session_end') {
+      if (sessTimerInterval) clearInterval(sessTimerInterval);
+    }
+  };
+  ws.onclose = ws.onerror = () => {
+    document.getElementById('wsDot').classList.remove('on');
+    document.getElementById('lStatus').textContent = 'RECONNECTING...';
+    wsRecon = setTimeout(connectWs, 3000);
+  };
+}
+connectWs();
+
+// ===== SESSIONS =====
+async function loadSessions() {
+  const res = await fetch('/api/sessions');
+  const sessions = await res.json();
+  const el = document.getElementById('sessionList');
+  if (!sessions.length) { el.innerHTML = '<div class="empty-state">BELUM ADA SESI TERSIMPAN</div>'; return; }
+  el.innerHTML = sessions.map(s => {
+    const start = new Date(s.started_at).toLocaleString('id');
+    const end   = s.ended_at ? new Date(s.ended_at).toLocaleString('id') : '— (aktif)';
+    return `<div class="session-item">
+      <div class="sess-info">
+        <div class="sess-id">SESSION #${s.id}</div>
+        <div class="sess-time">${start} → ${end}</div>
+        <div class="sess-pts">${(s.points||0).toLocaleString()} data points</div>
+      </div>
+      <div class="sess-actions">
+        <button class="btn btn-csv" onclick="downloadCsv(${s.id})">&#8659; CSV</button>
+        <button class="btn btn-replay" onclick="loadReplay(${s.id})">&#9654; Replay</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function downloadCsv(id) {
+  window.open('/api/sessions/'+id+'/csv');
+}
+
+// ===== REPLAY =====
+let replayData = [], replayIdx = 0, replayPlaying = false;
+let replayTimer = null, replaySpeed = 1;
+let rpyChartRpm = null, rpyChartMulti = null;
+
+async function loadReplay(id) {
+  switchTab('replay');
+  document.getElementById('replayEmpty').style.display = 'none';
+  document.getElementById('replayContent').style.display = 'block';
+  document.getElementById('replayTitle').textContent = 'SESSION #'+id;
+
+  const res = await fetch('/api/sessions/'+id+'/data');
+  replayData = await res.json();
+  replayIdx  = 0;
+  replayPlaying = false;
+  document.getElementById('btnPlayPause').textContent = '▶ Play';
+
+  const slider = document.getElementById('replaySlider');
+  slider.max = replayData.length - 1;
+  slider.value = 0;
+
+  // Build full charts
+  const labels = replayData.map((_,i) => i);
+  const rpms   = replayData.map(r => r.rpm);
+  const tpss   = replayData.map(r => r.tps);
+  const ects   = replayData.map(r => r.ect);
+  const o2s    = replayData.map(r => r.o2);
+
+  if (rpyChartRpm)   { rpyChartRpm.destroy(); }
+  if (rpyChartMulti) { rpyChartMulti.destroy(); }
+
+  rpyChartRpm = new Chart(document.getElementById('rpyChartRpm'), {
+    type:'line',
+    data:{ labels, datasets:[{ data:rpms, borderColor:'#ff3c3c', borderWidth:1.5, pointRadius:0, tension:0.3, fill:true, backgroundColor:'rgba(255,60,60,.07)' }] },
+    options:{ responsive:true, maintainAspectRatio:false, animation:false,
+      scales:{ x:{ display:false }, y:{ max:8000, grid:{ color:'rgba(255,255,255,.05)' }, ticks:{ color:'rgba(255,255,255,.3)', font:{size:9} } } },
+      plugins:{ legend:{ display:false }, annotation:{ annotations:{ line1:{ type:'line', xMin:0, xMax:0, borderColor:'rgba(0,200,255,.6)', borderWidth:1.5, id:'rpyLine' } } } }
+    }
+  });
+
+  rpyChartMulti = new Chart(document.getElementById('rpyChartMulti'), {
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'TPS %',  data:tpss, borderColor:'#ff8800', borderWidth:1.5, pointRadius:0, tension:0.3, yAxisID:'y' },
+      { label:'ECT °C', data:ects, borderColor:'#ff4488', borderWidth:1.5, pointRadius:0, tension:0.3, yAxisID:'y2' },
+      { label:'O2 λ',   data:o2s,  borderColor:'#aaff66', borderWidth:1.5, pointRadius:0, tension:0.3, yAxisID:'y3' },
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false, animation:false,
+      scales:{
+        x:{ display:false },
+        y:{  position:'left',  max:100, grid:{ color:'rgba(255,255,255,.05)' }, ticks:{ color:'#ff8800', font:{size:8} } },
+        y2:{ position:'right', max:120, grid:{ drawOnChartArea:false }, ticks:{ color:'#ff4488', font:{size:8} } },
+        y3:{ position:'right', max:1.5, grid:{ drawOnChartArea:false }, ticks:{ color:'#aaff66', font:{size:8} } },
+      },
+      plugins:{ legend:{ labels:{ color:'rgba(255,255,255,.4)', font:{size:9}, boxWidth:12 } } }
+    }
+  });
+
+  renderReplayFrame(0);
+}
+
+function renderReplayFrame(idx) {
+  if (!replayData.length) return;
+  idx = Math.max(0, Math.min(idx, replayData.length-1));
+  replayIdx = idx;
+  const d = replayData[idx];
+
+  setGauge('rpyArc','rpyRpm', d.rpm||0);
+  document.getElementById('rpyTps').innerHTML = (d.tps||0).toFixed(1)+' <span style="font-size:8px;opacity:.4">%</span>';
+  document.getElementById('rpyTpsBar').style.width = Math.min(d.tps||0,100)+'%';
+  document.getElementById('rpyVolt').innerHTML = (d.voltage||0).toFixed(1)+'<span class="mcard-unit">V</span>';
+  document.getElementById('rpyVoltBar').style.width = Math.min(((d.voltage||0)/16)*100,100)+'%';
+  document.getElementById('rpyEct').innerHTML = (d.ect||0).toFixed(1)+'<span class="mcard-unit">°C</span>';
+  document.getElementById('rpyEctBar').style.width = Math.min(((d.ect||0)/120)*100,100)+'%';
+  document.getElementById('rpyO2').innerHTML = (d.o2||0).toFixed(2)+'<span class="mcard-unit">λ</span>';
+  document.getElementById('rpyO2Bar').style.width = Math.min(((d.o2||0)/1.5)*100,100)+'%';
+  document.getElementById('rpyMap').innerHTML = (d.map_kpa||0).toFixed(1)+'<span class="mcard-unit">kPa</span>';
+  document.getElementById('rpyMapBar').style.width = Math.min(((d.map_kpa||0)/150)*100,100)+'%';
+
+  document.getElementById('replaySlider').value = idx;
+  document.getElementById('replayTimeLabel').textContent =
+    (idx+1)+' / '+replayData.length+' points';
+
+  // Update vertical line on charts
+  if (rpyChartRpm && rpyChartRpm.options.plugins.annotation) {
+    rpyChartRpm.options.plugins.annotation.annotations.line1.xMin = idx;
+    rpyChartRpm.options.plugins.annotation.annotations.line1.xMax = idx;
+    rpyChartRpm.update('none');
+  }
+}
+
+function togglePlay() {
+  replayPlaying = !replayPlaying;
+  document.getElementById('btnPlayPause').textContent = replayPlaying ? '⏸ Pause' : '▶ Play';
+  if (replayPlaying) tickReplay();
+}
+
+function tickReplay() {
+  if (!replayPlaying) return;
+  if (replayIdx >= replayData.length-1) {
+    replayPlaying = false;
+    document.getElementById('btnPlayPause').textContent = '▶ Play';
+    return;
+  }
+  renderReplayFrame(replayIdx+1);
+  const interval = Math.max(16, Math.round(300 / replaySpeed));
+  replayTimer = setTimeout(tickReplay, interval);
+}
+
+function seekReplay(val) {
+  replayPlaying = false;
+  document.getElementById('btnPlayPause').textContent = '▶ Play';
+  clearTimeout(replayTimer);
+  renderReplayFrame(parseInt(val));
+}
+
+function setSpeed(s) {
+  replaySpeed = s;
+  document.getElementById('replaySpeedLabel').textContent = s+'×';
+}
+</script>
+</body>
+</html>
